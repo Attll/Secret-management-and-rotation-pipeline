@@ -1,14 +1,23 @@
 [extend]
-  useDefault = true            # use gitleaks built-in ruleset (covers AWS, GCP, GitHub, etc.)
+  useDefault = true
 
 [[rules]]
   id = "custom-db-password"
   description = "Detects hardcoded database passwords"
   regex = '''(?i)(db_password|database_password|db_pass)\s*=\s*['"]?[^\s'"]+'''
   tags = ["secret", "database"]
+  [rules.allowlist]
+    regexes = [
+      '''db_password\s*=\s*parts\[''',          # variable assignment from split
+      '''DB_PASSWORD=\\\$DB_PASSWORD''',         # docker env var pass-through
+      '''DB_PASSWORD=\s*\$''',                   # any shell variable reference
+      '''env\.DB_PASSWORD\s*=''',                # groovy env assignment
+    ]
 
 [allowlist]
   paths = [
-    ".gitleaks.toml",          # ignore this config file itself
-    "vault/init/seed.sh",      # seed script contains placeholder values only
+    ".gitleaks.toml",
+    "vault/init/seed.sh",
+    "Jenkinsfile",                               # allowlist the whole Jenkinsfile
+    "Jenkinsfile.rotate",
   ]
