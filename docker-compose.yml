@@ -1,0 +1,42 @@
+services:
+
+  vault:
+    image: hashicorp/vault:1.15          # official Vault image
+    container_name: vault
+    ports:
+      - "8200:8200"                       # Vault UI available at localhost:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "root"     # dev mode root token — only for local dev
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK                          # Vault needs this to prevent secrets swapping to disk
+    networks:
+      - pipeline-net
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword   # only used by Vault internally to manage roles
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    networks:
+      - pipeline-net
+
+  app:
+    build: ./app                         # builds from app/Dockerfile
+    container_name: app
+    ports:
+      - "5000:5000"
+    environment:
+      VAULT_ADDR: http://vault:8200      # app talks to vault by container name
+    depends_on:
+      - vault
+      - postgres
+    networks:
+      - pipeline-net
+
+networks:
+  pipeline-net:                          # private network — containers find each other by name
