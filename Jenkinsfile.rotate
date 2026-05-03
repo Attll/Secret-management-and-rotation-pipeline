@@ -1,0 +1,62 @@
+pipeline {
+  agent any
+
+  triggers {
+    cron('H 2 * * *')
+  }
+
+  environment {
+    VAULT_ADDR = "http://vault:8200"
+  }
+
+  stages {
+
+    stage('Rotate Root DB Credential') {
+      steps {
+        withCredentials([
+          string(credentialsId: 'VAULT_ROLE_ID',   variable: 'ROLE_ID'),
+          string(credentialsId: 'VAULT_SECRET_ID', variable: 'SECRET_ID')
+        ]) {
+          echo 'Rotating PostgreSQL root credential via Vault...'
+          sh 'chmod +x scripts/rotate.sh && ./scripts/rotate.sh'
+        }
+      }
+    }
+
+    stage('Redeploy App with Fresh Credentials') {
+      steps {
+        echo 'Triggering main pipeline to redeploy with new dynamic credentials...'
+        build job: 'secret-pipeline', wait: true
+      }
+    }
+
+    stage('Verify Health After Rotation') {
+      steps {
+        echo 'Verifying app is healthy after rotation...'
+        sh '''
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://app:5000/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "App healthy after rotation"
+              exit 0
+            fi
+            echo "Attempt $i: status $STATUS - waiting 10s..."
+            sleep 10
+          done
+          echo "ALERT: App failed health check after rotation"
+          exit 1
+        '''
+      }
+    }
+
+  }
+
+  post {
+    success {
+      echo "Rotation complete. New root credential active. Vault audit log updated."
+    }
+    failure {
+      echo "ROTATION FAILED - manual intervention required. Old credentials still valid."
+    }
+  }
+}
