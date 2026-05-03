@@ -24,8 +24,8 @@ pipeline {
     stage('Fetch Secrets from Vault') {
       steps {
         withCredentials([
-          string(credentialsId: 'VAULT_ROLE_ID',    variable: 'ROLE_ID'),
-          string(credentialsId: 'VAULT_SECRET_ID',  variable: 'SECRET_ID')
+          string(credentialsId: 'VAULT_ROLE_ID',   variable: 'ROLE_ID'),
+          string(credentialsId: 'VAULT_SECRET_ID', variable: 'SECRET_ID')
         ]) {
           script {
             echo 'Authenticating with Vault via AppRole...'
@@ -33,29 +33,30 @@ pipeline {
             def vaultToken = sh(
               script: """
                 curl -s --request POST \
-                  --data '{"role_id":"'"\$ROLE_ID"'","secret_id":"'"\$SECRET_ID"'"}' \
+                  --data '{\"role_id\":\"'\$ROLE_ID'\",\"secret_id\":\"'\$SECRET_ID'\"}' \
                   \$VAULT_ADDR/v1/auth/approle/login \
                   | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])"
               """,
               returnStdout: true
             ).trim()
 
-            echo 'Fetching DB credentials from Vault...'
+            echo 'Requesting dynamic DB credentials from Vault database engine...'
 
-            def dbSecret = sh(
+            def dbCreds = sh(
               script: """
                 curl -s --header "X-Vault-Token: ${vaultToken}" \
-                  \$VAULT_ADDR/v1/secret/data/app/db \
-                  | python3 -c "import sys,json; d=json.load(sys.stdin)['data']['data']; print(d['username']+'|'+d['password'])"
+                  \$VAULT_ADDR/v1/database/creds/app-role \
+                  | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d['username']+'|'+d['password'])"
               """,
               returnStdout: true
             ).trim()
 
-            def parts = dbSecret.split('\\|')
+            def parts = dbCreds.split('\\|')
             env.DB_USERNAME = parts[0]
             env.DB_PASSWORD = parts[1]
 
-            echo 'Secrets fetched. Values masked in logs.'
+            echo "Dynamic credentials issued: ${env.DB_USERNAME}"
+            echo "These expire in 1 hour and will be auto-revoked by Vault."
           }
         }
       }
