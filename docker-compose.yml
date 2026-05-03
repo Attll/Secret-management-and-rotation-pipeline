@@ -1,15 +1,15 @@
 services:
 
   vault:
-    image: hashicorp/vault:1.15          # official Vault image
+    image: hashicorp/vault:1.15
     container_name: vault
     ports:
-      - "8200:8200"                       # Vault UI available at localhost:8200
+      - "8200:8200"
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "root"     # dev mode root token — only for local dev
+      VAULT_DEV_ROOT_TOKEN_ID: "root"
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
     cap_add:
-      - IPC_LOCK                          # Vault needs this to prevent secrets swapping to disk
+      - IPC_LOCK
     networks:
       - pipeline-net
 
@@ -18,7 +18,7 @@ services:
     container_name: postgres
     environment:
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: adminpassword   # only used by Vault internally to manage roles
+      POSTGRES_PASSWORD: adminpassword
       POSTGRES_DB: appdb
     ports:
       - "5432:5432"
@@ -26,17 +26,34 @@ services:
       - pipeline-net
 
   app:
-    build: ./app                         # builds from app/Dockerfile
+    build: ./app
     container_name: app
     ports:
       - "5000:5000"
     environment:
-      VAULT_ADDR: http://vault:8200      # app talks to vault by container name
+      VAULT_ADDR: http://vault:8200
     depends_on:
       - vault
       - postgres
     networks:
       - pipeline-net
 
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    ports:
+      - "8080:8080"                      # Jenkins UI at localhost:8080
+      - "50000:50000"                    # agent communication port
+    volumes:
+      - jenkins_home:/var/jenkins_home   # persists Jenkins data between restarts
+      - /var/run/docker.sock:/var/run/docker.sock  # lets Jenkins run docker commands
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - pipeline-net
+
+volumes:
+  jenkins_home:                          # named volume so Jenkins config survives restarts
+
 networks:
-  pipeline-net:                          # private network — containers find each other by name
+  pipeline-net:
